@@ -1,6 +1,6 @@
 # Phase 4 — Automation
 
-Three mechanisms: a scheduled-path flow for reminders, an approval process for cancellations, and Apex for venue integrity.
+Four mechanisms: a scheduled-path flow for reminders, a second flow for feedback requests, an approval process for cancellations, and Apex for venue integrity.
 
 ---
 
@@ -310,3 +310,78 @@ Set the Client email to your own address first.
 - **Recall does not revert the status.** Approval processes have no recall action, so after a recall the event sits at `Pending Cancellation` and needs a manual change back to `Planned`.
 - **A rejected event can never re-request cancellation**, because entry criteria require `Planned` and rejection sets `Rejected`. This follows the specification. To allow re-submission, set the rejection field update back to `Planned`.
 - **Submitter and approver should not be the same user.** Salesforce permits it, but it does not prove routing works. Create the second user in Phase 6 and reassign the approver.
+
+---
+
+## 4d. Feedback notification flow
+
+The project description promises automation for reminders, **feedback notifications** and approval updates. The reminder flow and the approval process cover two of those; this flow covers the third.
+
+### Why it belongs here
+
+The nightly batch already sets past events to `Completed`. Hooking a flow onto that status change means feedback requests are sent **with no manual step at all** — the batch marks the event finished, the flow notices, the client is emailed. That chain is the strongest argument in the project that the components were designed as one system rather than five separate features.
+
+### Design decision
+
+A **Record-Triggered Flow on `Event__c`, after-save**, with entry conditions:
+
+| Condition | Value |
+|---|---|
+| Field | `Event Status` |
+| Operator | Equals |
+| Value | `Completed` |
+
+Run the flow for updated records: **Only when a change is made in the record**.
+
+That last setting is the whole design. Without it, *every* save of an already-completed event — adding a note, correcting a budget — sends the client another email. With it, the flow fires exactly once, on the transition into `Completed`. After-save (not before-save) is required because a before-save flow cannot reliably read the old value, and Send Email should not be part of a record's transaction.
+
+### Step 1 — Get Records (Client)
+
+`$Record` exposes only fields on the triggering object, so the client's email must be fetched.
+
+- Object: **Client**
+- Filter: `Client ID` Equals `{!$Record.Client__c}`
+- How Many: **Only the first record**
+- Store automatically: **Automatically store all fields**
+
+Add a guard so a blank client does not throw: on the following Decision element, one outcome `Client Found` with `{!Get_Client.Id}` Is Null → False, and a Default Outcome that does nothing.
+
+### Step 2 — Send Email
+
+Connect it to the `Client Found` outcome.
+
+- Subject: `How was your event, {!$Record.Name}?`
+- Rich Text Body:
+
+```html
+<p>Dear {!Get_Client.Name},</p>
+<p>Thank you for choosing EventForce. Your event <b>{!$Record.Name}</b> has been marked as completed.</p>
+<p>We would be grateful if you could share a few minutes of feedback with your coordinator. Your comments help us improve future events.</p>
+<p>Regards,<br/>EventForce Management Team</p>
+```
+
+### Step 3 — save and activate
+
+Flow Label `Client Feedback Request` → API Name `Client_Feedback_Request` → Save → **Activate**.
+
+Same Deliverability prerequisite as the reminder flow: Setup → **Email Deliverability** → Access Level = **All email**, otherwise nothing sends in a dev org.
+
+### Testing
+
+1. Set a Client's email to your own address.
+2. Create an Event for that client with status `Planned` and any date.
+3. Change `Event Status` to `Completed` and save → the email arrives.
+4. Edit something unrelated on that event and save again → **no second email**. That negative test is what proves the "only when a change is made" setting works, and it is worth showing on camera.
+
+To demo the full chain without waiting for 20:00, run the batch manually: Developer Console → Debug → Open Execute Anonymous Window →
+
+```apex
+Database.executeBatch(new BatchCompleteEvents(), 200);
+```
+
+Because the sample data leaves three past events at `Planned`, that single line marks all three `Completed`, releases their venues through `EventTrigger`, and sends three feedback requests — the batch, the trigger and both flows all firing from one command.
+
+### Known limitations
+
+- An event that goes `Completed` → `Planned` → `Completed` sends a second request. The flow does not check whether a `Feedback__c` already exists; adding a Get Records on Feedback as a second guard outcome would close that.
+- The email is sent by the Automated Process / system user, not by the event coordinator, so replies will not reach a coordinator inbox unless a reply-to is configured.

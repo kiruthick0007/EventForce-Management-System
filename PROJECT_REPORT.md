@@ -46,7 +46,7 @@ Salesforce was chosen because the majority of the requirement is configurable ra
 
 1. Model clients, events, vendors, venues and feedback as a normalised Salesforce data model, including a many-to-many relationship between events and vendors.
 2. Guarantee venue integrity in code — a venue must be reserved while booked and released when freed, and two live events must never occupy the same venue on the same date.
-3. Automate client communication with a reminder three days before an event.
+3. Automate client communication with a reminder three days before an event and a feedback request once it is completed.
 4. Formalise event cancellation as an auditable approval process with status transitions and email notification to approver and client.
 5. Enforce data quality at the point of entry through validation rules, and derive budget figures through formula and roll-up fields so they cannot be mistyped.
 6. Restrict access by role so that commercially sensitive fields — client budget and vendor cost — are invisible to users who do not need them.
@@ -173,7 +173,19 @@ A record-triggered flow alone cannot satisfy this requirement, because it only e
 
 > **Screenshot:** Paused and Waiting Interviews listing the queued `3 Days Before Event` path. `images/07-flow-interview.png`
 
-### 4.5 Automation — cancellation approval process
+### 4.5 Automation — feedback notification flow
+
+The project description requires automation for reminders, **feedback notifications** and approval updates. `Client Feedback Request` is a second record-triggered flow on `Event__c` that supplies the feedback notification.
+
+Entry condition: `Event Status` equals `Completed`, with the record-triggered option set to run **only when a change is made in the record**. That setting is what makes the flow correct — without it, every subsequent save of a completed event would send the client a further email. With it, the flow fires exactly once, on the transition into `Completed`. The flow runs after save, because a Send Email action should not be part of the record's own transaction.
+
+The flow contains three elements: a Get Records that retrieves the client (`$Record` exposes only fields of the triggering object, so the client's email must be fetched separately), a Decision that suppresses sending when the event has no client, and a Send Email action addressed to `{!Get_Client.Email__c}` requesting feedback.
+
+This flow is significant because it completes an automated chain rather than operating in isolation. `BatchCompleteEvents` marks past events `Completed` each night; that update fires both `EventTrigger`, which releases the venues, and this flow, which asks the clients for feedback. A single scheduled job therefore produces venue maintenance and client communication with no manual step anywhere in the path.
+
+> **Screenshot:** Flow Builder canvas for `Client Feedback Request` showing the Get Records, Decision and Send Email elements. `images/08-feedback-flow.png`
+
+### 4.6 Automation — cancellation approval process
 
 `Event Cancellation Approval` on `Event__c`. Entry criterion: `Event Status` equals `Planned`.
 
@@ -189,9 +201,9 @@ Three Classic email templates were created for this process. Because the final a
 
 Two limitations are acknowledged. Recall unlocks the record but does not revert the status, because approval processes expose no recall action; the status must be changed back manually. And a rejected event cannot submit a second request, because entry criteria require `Planned`.
 
-> **Screenshot:** Approval process detail page showing all four action groups. `images/08-approval-process.png`
+> **Screenshot:** Approval process detail page showing all four action groups. `images/09-approval-process.png`
 
-> **Screenshot:** The received approver notification email. `images/09-approval-email.png`
+> **Screenshot:** The received approver notification email. `images/10-approval-email.png`
 
 ---
 
@@ -213,9 +225,9 @@ The Event page layout carries the derived budget fields, the related lists for E
 - Budget Balance and Budget Utilization update as vendor assignments are added, so overspend is visible during planning rather than after invoicing. Winter Music Festival in the sample data demonstrates an over-budget event at 107% utilisation.
 - Feedback ratings render as words through `Rating_Label__c` rather than bare numbers.
 
-> **Screenshot:** The application open in the App Launcher with the navigation bar visible. `images/10-app-launcher.png`
+> **Screenshot:** The application open in the App Launcher with the navigation bar visible. `images/11-app-launcher.png`
 
-> **Screenshot:** A complete Event record page showing related lists and derived fields. `images/11-event-record.png`
+> **Screenshot:** A complete Event record page showing related lists and derived fields. `images/12-event-record.png`
 
 ---
 
@@ -238,7 +250,7 @@ The data set is constructed to exercise every feature:
 | Vendor performance spread | Six vendors across 22 assignments, totals from 365,000 to 1,525,000 |
 | Rating distribution | Feedback scores of 5, 4, 2, 5 and 3 |
 
-> **Screenshot:** The Venue list showing all four venues at `Reserved` after seeding. `images/12-seeded-venues.png`
+> **Screenshot:** The Venue list showing all four venues at `Reserved` after seeding. `images/13-seeded-venues.png`
 
 ---
 
@@ -303,11 +315,11 @@ The first opens exactly the records an administrator must act on during a cancel
 
 All verification was performed through **Login As**. It cannot be performed as the administrator: System Administrator holds `View All Data`, which overrides Organization-Wide Defaults, sharing rules and record ownership simultaneously, so every restriction appears inert.
 
-> **Screenshot:** Sharing Settings page showing the OWD table. `images/13-owd.png`
+> **Screenshot:** Sharing Settings page showing the OWD table. `images/14-owd.png`
 
-> **Screenshot:** The role hierarchy tree. `images/14-role-hierarchy.png`
+> **Screenshot:** The role hierarchy tree. `images/15-role-hierarchy.png`
 
-> **Screenshot:** The same Event record as Event Admin (budget fields populated) and as Vendor Manager (budget fields blank). `images/15-fls-comparison.png`
+> **Screenshot:** The same Event record as Event Admin (budget fields populated) and as Vendor Manager (budget fields blank). `images/16-fls-comparison.png`
 
 ---
 
@@ -339,9 +351,9 @@ A public report folder `EventForce Reports` holds three reports.
 
 Because the dashboard runs as the viewer, field-level security applies to it — a Vendor Manager opening the dashboard sees spend but not client budget.
 
-> **Screenshot:** Each of the three reports with its chart. `images/16-report-upcoming.png`, `images/17-report-vendor.png`, `images/18-report-summary.png`
+> **Screenshot:** Each of the three reports with its chart. `images/17-report-upcoming.png`, `images/18-report-vendor.png`, `images/19-report-summary.png`
 
-> **Screenshot:** The complete dashboard with all five components populated. `images/19-dashboard.png`
+> **Screenshot:** The complete dashboard with all five components populated. `images/20-dashboard.png`
 
 ---
 
@@ -378,22 +390,25 @@ The defects actually encountered during development, and their resolutions, are 
 
 ### 9.4 Documentation summary
 
+This report is maintained as Markdown in `PROJECT_REPORT.md` and rendered into the required submission format — Word and PDF, Times New Roman 12 pt, with a cover page, page header and `Page N of M` footer — by `tools/md_to_docx.py`. Generating the submission copy rather than typing it separately means the document can never drift away from the implementation notes it summarises.
+
 | Document | Contents |
 |---|---|
 | `README.md` | Repository orientation, Apex deployment order, recorded deviations from the specification |
 | `docs/01-data-model.md` | Objects, fields, relationships, tabs, application |
 | `docs/02-validation-and-formulas.md` | Validation rules, formula and roll-up fields |
-| `docs/03-automation.md` | Apex behaviour, reminder flow, approval process |
+| `docs/03-automation.md` | Apex behaviour, reminder flow, feedback notification flow, approval process |
 | `docs/04-analytics-and-sample-data.md` | Seeder, report type, three reports, dashboard |
 | `docs/05-security.md` | OWD, roles, profiles, field-level security, permission set, sharing rules, users |
 | `docs/06-demo-and-viva.md` | Demo script, debugging log, viva question bank |
 | `apex/` | Six Apex source files |
+| `tools/md_to_docx.py` | Renders this report into the Word submission copy |
 
 ---
 
 ## 10. Conclusion
 
-EventForce demonstrates that the majority of a real CRM requirement is satisfied by configuration rather than code. Five of the seven functional areas — the data model, tabs and application, validation and derived fields, the reminder flow and the approval process, and the entire security model — were built declaratively. Apex was needed in exactly two places, and both were cases where the platform offers no declarative equivalent: enforcing a cross-record uniqueness constraint across a venue and a date, and sweeping historical records on a schedule.
+EventForce demonstrates that the majority of a real CRM requirement is satisfied by configuration rather than code. Five of the seven functional areas — the data model, tabs and application, validation and derived fields, the reminder flow, the feedback notification flow and the approval process, and the entire security model — were built declaratively. Apex was needed in exactly two places, and both were cases where the platform offers no declarative equivalent: enforcing a cross-record uniqueness constraint across a venue and a date, and sweeping historical records on a schedule.
 
 The most instructive part of the build was not any single component but the interaction between three of them. The batch job, the trigger and the approval process all write to `Event_Status__c`, and the system only behaves correctly once all three agree on which statuses free a venue and which do not. `Canceled` and `Completed` release the venue; `Pending Cancellation` and `Rejected` must not, because in both cases the event is still going ahead. Getting that set wrong produced the two most significant defects found during development — the batch overwriting approval outcomes, and venues released while a cancellation was merely under review.
 
@@ -416,18 +431,19 @@ Captured during the demo and inserted at the placeholders above.
 | `05-apex-tests.png` | Developer Console test run, 12 passing |
 | `06-flow-canvas.png` | Flow Builder canvas with the scheduled path |
 | `07-flow-interview.png` | Paused and Waiting Interviews showing the queued path |
-| `08-approval-process.png` | Approval process detail page with all four action groups |
-| `09-approval-email.png` | The received approver notification email |
-| `10-app-launcher.png` | Application tile in the App Launcher |
-| `11-event-record.png` | Complete Event record page |
-| `12-seeded-venues.png` | Venue list after seeding |
-| `13-owd.png` | Sharing Settings OWD table |
-| `14-role-hierarchy.png` | Role hierarchy tree |
-| `15-fls-comparison.png` | Same event as Admin and as Vendor Manager |
-| `16-report-upcoming.png` | Upcoming Events — Summary by Month |
-| `17-report-vendor.png` | Vendor Performance |
-| `18-report-summary.png` | Event Summary |
-| `19-dashboard.png` | EventForce Dashboard |
+| `08-feedback-flow.png` | `Client Feedback Request` Flow Builder canvas |
+| `09-approval-process.png` | Approval process detail page with all four action groups |
+| `10-approval-email.png` | The received approver notification email |
+| `11-app-launcher.png` | Application tile in the App Launcher |
+| `12-event-record.png` | Complete Event record page |
+| `13-seeded-venues.png` | Venue list after seeding |
+| `14-owd.png` | Sharing Settings OWD table |
+| `15-role-hierarchy.png` | Role hierarchy tree |
+| `16-fls-comparison.png` | Same event as Admin and as Vendor Manager |
+| `17-report-upcoming.png` | Upcoming Events — Summary by Month |
+| `18-report-vendor.png` | Vendor Performance |
+| `19-report-summary.png` | Event Summary |
+| `20-dashboard.png` | EventForce Dashboard |
 
 ## Appendix B — Component inventory
 
@@ -442,7 +458,7 @@ Captured during the demo and inserted at the placeholders above.
 | Apex classes | 5 | Handler, batch, schedulable, test, seeder |
 | Apex triggers | 1 | `EventTrigger` on `Event__c` |
 | Test methods | 12 | All passing |
-| Flows | 1 | Event 3-Day Reminder, with 1 scheduled path |
+| Flows | 2 | Event 3-Day Reminder (1 scheduled path), Client Feedback Request |
 | Email templates | 3 | Approver request, client approved, client rejected |
 | Email alerts | 3 | One per template |
 | Field updates | 3 | Pending Cancellation, Canceled, Rejected |

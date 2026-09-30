@@ -29,13 +29,33 @@ apex/
 docs/
   01-data-model.md                    Objects, fields, relationships, tabs, app
   02-validation-and-formulas.md       Validation rules, formula and roll-up fields
-  03-automation.md                    3-day reminder flow, cancellation approval process, Apex behaviour
+  03-automation.md                    3-day reminder flow, feedback notification flow, cancellation approval process, Apex behaviour
   04-analytics-and-sample-data.md     Seeding, report types, three reports, dashboard
   05-security.md                      OWD, profiles, role hierarchy, permission set, sharing rules, users
   06-demo-and-viva.md                 Recorded-demo script and expected viva questions
 
-PROJECT_REPORT.md                     Formal report in the required submission format
+tools/
+  md_to_docx.py                       Regenerates the Word report from PROJECT_REPORT.md
+
+PROJECT_REPORT.md                     Formal report, maintained as Markdown
+EventForce_Project_Report.docx        Submission copy (Word, Times New Roman 12 pt, cover page)
+EventForce_Project_Report.pdf         Submission copy (PDF, 20 pages)
 ```
+
+## The submission document
+
+The specification requires documentation in Word or PDF, formatted in Times New Roman 12 pt. `PROJECT_REPORT.md` is the source of truth and the two submission files are generated from it, so the report is never maintained in two places.
+
+```bash
+python -m pip install python-docx
+python tools/md_to_docx.py          # writes EventForce_Project_Report.docx
+```
+
+The script builds the cover page, promotes Markdown `##` to Word Heading 1, renders tables with the Table Grid style, sets code spans and blocks in Consolas, and adds a page header plus a `Page N of M` footer. Edit `COVER_FIELDS` at the top of the script to fill in your name, roll number, department, guide and institution — or type them straight onto the cover page in Word.
+
+For the PDF, open the `.docx` in Word and choose File → Save As → PDF. The committed PDF was produced that way.
+
+If you edit `PROJECT_REPORT.md`, re-run the script and re-export the PDF so the three stay in step.
 
 ## Apex components
 
@@ -81,7 +101,7 @@ Picklist values must be spelled exactly: `Planned`, `Pending Cancellation`, `Can
 | 1 | Developer org, custom objects, fields, relationships | `docs/01-data-model.md` |
 | 2 | Custom tabs and the Lightning app | `docs/01-data-model.md` |
 | 3 | Validation rules, formula and roll-up fields | `docs/02-validation-and-formulas.md` |
-| 4 | Reminder flow, approval process, Apex | `docs/03-automation.md` |
+| 4 | Reminder flow, feedback flow, approval process, Apex | `docs/03-automation.md` |
 | 5 | Sample data, reports, dashboard | `docs/04-analytics-and-sample-data.md` |
 | 6 | OWD, profiles, roles, permission set, sharing rules | `docs/05-security.md` |
 
